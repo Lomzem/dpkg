@@ -41,6 +41,12 @@ pub fn run(config_path: &Path, options: &SyncOptions) -> Result<(), DpkgError> {
     let installed = system::get_explicitly_installed()?;
     let installed_set: HashSet<&str> = installed.iter().map(|s| s.as_str()).collect();
 
+    // Get all installed packages (explicit + deps) so we can filter AUR packages
+    // before marking. pacman -D --asexplicit fails for packages not in the local DB,
+    // and AUR packages only enter the local DB after installation via yay.
+    let all_installed = system::get_all_installed()?;
+    let all_installed_set: HashSet<&str> = all_installed.iter().map(|s| s.as_str()).collect();
+
     let to_install_official: Vec<String> = desired_official
         .iter()
         .filter(|p| !installed_set.contains(p.as_str()))
@@ -100,7 +106,16 @@ pub fn run(config_path: &Path, options: &SyncOptions) -> Result<(), DpkgError> {
         system::mark_all_as_deps(options.verbose)?;
 
         system::mark_as_explicit(&desired_official, options.verbose)?;
-        system::mark_as_explicit(&desired_aur, options.verbose)?;
+
+        // Only mark AUR packages that are already installed. Uninstalled AUR packages
+        // aren't in pacman's local DB yet, so pacman -D --asexplicit would fail.
+        // yay will mark them as explicit when it installs them.
+        let installed_aur: Vec<String> = desired_aur
+            .iter()
+            .filter(|p| all_installed_set.contains(p.as_str()))
+            .cloned()
+            .collect();
+        system::mark_as_explicit(&installed_aur, options.verbose)?;
 
         if !unwanted_orphans.is_empty() {
             if !options.quiet {

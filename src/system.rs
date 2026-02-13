@@ -42,6 +42,25 @@ pub fn get_explicitly_installed() -> Result<Vec<String>, DpkgError> {
         .collect())
 }
 
+pub fn get_all_installed() -> Result<Vec<String>, DpkgError> {
+    let output = Command::new(pacman_bin())
+        .args(["-Qq"])
+        .output()
+        .map_err(|e| DpkgError::InstallFailed(format!("Failed to run pacman: {e}")))?;
+
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        return Err(DpkgError::InstallFailed(format!(
+            "pacman -Qq failed: {stderr}"
+        )));
+    }
+
+    Ok(String::from_utf8_lossy(&output.stdout)
+        .lines()
+        .map(|s| s.to_string())
+        .collect())
+}
+
 pub fn get_orphans() -> Result<Vec<String>, DpkgError> {
     let output = Command::new(pacman_bin())
         .args(["-Qqdt"])
@@ -84,9 +103,10 @@ pub fn mark_all_as_deps(verbose: bool) -> Result<(), DpkgError> {
         .map_err(|e| DpkgError::PermissionDenied(format!("Failed to run sudo pacman: {e}")))?;
 
     if !output.status.success() {
-        return Err(DpkgError::PermissionDenied(
-            "Failed to mark packages as dependencies".to_string(),
-        ));
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        return Err(DpkgError::PermissionDenied(format!(
+            "Failed to mark packages as dependencies: {}", stderr.trim()
+        )));
     }
 
     Ok(())
@@ -113,9 +133,10 @@ pub fn mark_as_explicit(packages: &[String], verbose: bool) -> Result<(), DpkgEr
         .map_err(|e| DpkgError::PermissionDenied(format!("Failed to run sudo pacman: {e}")))?;
 
     if !output.status.success() {
-        return Err(DpkgError::PermissionDenied(
-            "Failed to mark packages as explicit".to_string(),
-        ));
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        return Err(DpkgError::PermissionDenied(format!(
+            "Failed to mark packages as explicit: {}", stderr.trim()
+        )));
     }
 
     Ok(())
