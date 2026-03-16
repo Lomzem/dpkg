@@ -73,6 +73,17 @@ pub fn compute_sync_plan(
     }
 }
 
+/// Filter desired packages to only those already installed on the system.
+/// Packages not yet installed can't be marked as explicit in pacman's DB;
+/// pacman/yay will mark them as explicit when they're installed.
+pub fn filter_installed(desired: &[String], all_installed: &HashSet<&str>) -> Vec<String> {
+    desired
+        .iter()
+        .filter(|p| all_installed.contains(p.as_str()))
+        .cloned()
+        .collect()
+}
+
 pub fn run(config_path: &Path, options: &SyncOptions) -> Result<(), DpkgError> {
     // 1. Parse configuration
     let config = parse_config(config_path)?;
@@ -144,16 +155,10 @@ pub fn run(config_path: &Path, options: &SyncOptions) -> Result<(), DpkgError> {
     if !options.only_install {
         system::mark_all_as_deps(options.verbose)?;
 
-        system::mark_as_explicit(&desired_official, options.verbose)?;
+        let installed_official = filter_installed(&desired_official, &all_installed_set);
+        system::mark_as_explicit(&installed_official, options.verbose)?;
 
-        // Only mark AUR packages that are already installed. Uninstalled AUR packages
-        // aren't in pacman's local DB yet, so pacman -D --asexplicit would fail.
-        // yay will mark them as explicit when it installs them.
-        let installed_aur: Vec<String> = desired_aur
-            .iter()
-            .filter(|p| all_installed_set.contains(p.as_str()))
-            .cloned()
-            .collect();
+        let installed_aur = filter_installed(&desired_aur, &all_installed_set);
         system::mark_as_explicit(&installed_aur, options.verbose)?;
 
         if !to_remove.is_empty() {
@@ -478,5 +483,35 @@ mod tests {
         let (official, aur) = collect_packages(&config, "anyhost");
         assert_eq!(official, sv(&["base", "git"]));
         assert_eq!(aur, sv(&["yay-bin", "paru"]));
+    }
+
+    // ── Test 10: filter_installed excludes not-yet-installed packages ──
+
+    #[test]
+    fn filter_installed_excludes_missing() {
+        let all_installed: HashSet<&str> = ["base", "git", "firefox"].into();
+        let desired = sv(&["base", "git", "lua-language-server"]);
+        let result = filter_installed(&desired, &all_installed);
+        assert_eq!(result, sv(&["base", "git"]));
+    }
+
+    // ── Test 11: filter_installed returns all when everything is installed ──
+
+    #[test]
+    fn filter_installed_returns_all_when_installed() {
+        let all_installed: HashSet<&str> = ["base", "git", "firefox"].into();
+        let desired = sv(&["base", "git"]);
+        let result = filter_installed(&desired, &all_installed);
+        assert_eq!(result, sv(&["base", "git"]));
+    }
+
+    // ── Test 12: filter_installed returns empty for all-new packages ──
+
+    #[test]
+    fn filter_installed_empty_when_none_installed() {
+        let all_installed: HashSet<&str> = ["base", "git"].into();
+        let desired = sv(&["new-pkg-a", "new-pkg-b"]);
+        let result = filter_installed(&desired, &all_installed);
+        assert!(result.is_empty());
     }
 }
