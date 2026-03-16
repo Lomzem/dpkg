@@ -138,10 +138,7 @@ pub fn run(config_path: &Path, options: &SyncOptions) -> Result<(), DpkgError> {
         return Ok(());
     }
 
-    // 5. Check first-run
-    check_first_run()?;
-
-    // 6. Execute changes
+    // 5. Execute changes
 
     // Mark all as deps → mark desired as explicit → remove orphans
     if !options.only_install {
@@ -270,44 +267,6 @@ fn confirm_removal() -> Result<bool, DpkgError> {
 
     let answer = input.trim().to_lowercase();
     Ok(answer == "y" || answer == "yes")
-}
-
-fn check_first_run() -> Result<(), DpkgError> {
-    let home = std::env::var("HOME").unwrap_or_else(|_| "/root".to_string());
-    let marker = std::path::PathBuf::from(&home).join(".config/dpkg/.initialized");
-
-    if marker.exists() {
-        return Ok(());
-    }
-
-    output::warning("First time setup detected");
-    println!();
-    output::plain("Before proceeding, it's recommended to back up your currently installed packages:");
-    println!();
-    output::plain("    pacman -Qqe > ~/pkglist-backup.txt");
-    println!();
-    output::plain("This will allow you to restore your system if needed.");
-    println!();
-    print!("Continue? [y/N]: ");
-    io::stdout().flush().ok();
-
-    let mut input = String::new();
-    io::stdin()
-        .read_line(&mut input)
-        .map_err(|_| DpkgError::UserCancelled)?;
-
-    let answer = input.trim().to_lowercase();
-    if answer != "y" && answer != "yes" {
-        return Err(DpkgError::UserCancelled);
-    }
-
-    // Create marker file
-    if let Some(parent) = marker.parent() {
-        std::fs::create_dir_all(parent).ok();
-    }
-    std::fs::write(&marker, "").ok();
-
-    Ok(())
 }
 
 #[cfg(test)]

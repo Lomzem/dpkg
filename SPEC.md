@@ -760,22 +760,6 @@ imv
 
 ## Safety Features
 
-### Before First Run
-
-On the first execution, display a warning:
-
-```
-⚠️  First time setup detected
-
-Before proceeding, it's recommended to back up your currently installed packages:
-
-    pacman -Qqe > ~/pkglist-backup.txt
-
-This will allow you to restore your system if needed.
-
-Continue? [y/N]
-```
-
 ### Dry Run Mode
 
 The `-n, --dry-run` flag shows exactly what would happen without making changes:
@@ -959,12 +943,6 @@ A: Yes! The hostname feature (`## @hostname`) is designed exactly for this. Use 
 
 **Q: How do I see what would happen before applying changes?**
 A: Use `dpkg sync -n` or `dpkg diff` for a dry run.
-
-**Q: I accidentally removed packages. How do I restore them?**
-A: If you created the backup as suggested on first run:
-```bash
-pacman -S --needed - < ~/pkglist-backup.txt
-```
 
 ---
 
