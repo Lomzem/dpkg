@@ -20,7 +20,7 @@ pub struct SyncOptions {
 pub struct SyncPlan {
     pub to_install_official: Vec<String>,
     pub to_install_aur: Vec<String>,
-    pub unwanted_orphans: Vec<String>,
+    pub to_remove: Vec<String>,
 }
 
 /// Pure computation: given desired packages, what's installed, and current orphans,
@@ -52,15 +52,24 @@ pub fn compute_sync_plan(
     for p in desired_aur {
         all_desired.insert(p.as_str());
     }
-    let unwanted_orphans: Vec<String> = orphans
-        .into_iter()
+    // Packages to remove = (explicitly_installed ∪ orphans) - all_desired
+    // This simulates what happens after mark_all_as_deps + mark_as_explicit(desired)
+    let to_remove: Vec<String> = explicitly_installed
+        .iter()
         .filter(|p| !all_desired.contains(p.as_str()))
+        .cloned()
+        .chain(
+            orphans
+                .into_iter()
+                .filter(|p| !all_desired.contains(p.as_str()))
+                .filter(|p| !installed_set.contains(p.as_str())),
+        )
         .collect();
 
     SyncPlan {
         to_install_official,
         to_install_aur,
-        unwanted_orphans,
+        to_remove,
     }
 }
 
@@ -102,7 +111,7 @@ pub fn run(config_path: &Path, options: &SyncOptions) -> Result<(), DpkgError> {
     let SyncPlan {
         to_install_official,
         to_install_aur,
-        unwanted_orphans,
+        to_remove,
     } = &plan;
 
     // 4. Dry run — just print and exit
@@ -112,7 +121,7 @@ pub fn run(config_path: &Path, options: &SyncOptions) -> Result<(), DpkgError> {
             &hostname,
             to_install_official,
             to_install_aur,
-            unwanted_orphans,
+            to_remove,
             options.quiet,
         );
         return Ok(());
@@ -120,7 +129,7 @@ pub fn run(config_path: &Path, options: &SyncOptions) -> Result<(), DpkgError> {
 
     // Check if there's nothing to do
     let nothing_to_install = to_install_official.is_empty() && to_install_aur.is_empty();
-    let nothing_to_remove = unwanted_orphans.is_empty();
+    let nothing_to_remove = to_remove.is_empty();
 
     if nothing_to_install && nothing_to_remove {
         if !options.quiet {
@@ -150,10 +159,10 @@ pub fn run(config_path: &Path, options: &SyncOptions) -> Result<(), DpkgError> {
             .collect();
         system::mark_as_explicit(&installed_aur, options.verbose)?;
 
-        if !unwanted_orphans.is_empty() {
+        if !to_remove.is_empty() {
             if !options.quiet {
-                output::warning("The following packages will be removed (orphans):");
-                for pkg in unwanted_orphans {
+                output::warning("The following packages will be removed:");
+                for pkg in to_remove {
                     output::plain(&format!("  {pkg}"));
                 }
             }
@@ -162,8 +171,8 @@ pub fn run(config_path: &Path, options: &SyncOptions) -> Result<(), DpkgError> {
                 system::remove_orphans(options.verbose)?;
                 if !options.quiet {
                     output::success(&format!(
-                        "Removed {} orphaned packages",
-                        unwanted_orphans.len()
+                        "Removed {} packages",
+                        to_remove.len()
                     ));
                 }
             } else {
@@ -207,7 +216,7 @@ fn print_plan(
     hostname: &str,
     to_install_official: &[String],
     to_install_aur: &[String],
-    unwanted_orphans: &[String],
+    to_remove: &[String],
     quiet: bool,
 ) {
     if quiet {
@@ -234,15 +243,15 @@ fn print_plan(
         println!();
     }
 
-    if !unwanted_orphans.is_empty() {
-        output::dry_run("Would remove (orphans):");
-        for pkg in unwanted_orphans {
+    if !to_remove.is_empty() {
+        output::dry_run("Would remove:");
+        for pkg in to_remove {
             output::plain(&format!("  {pkg}"));
         }
         println!();
     }
 
-    if to_install_official.is_empty() && to_install_aur.is_empty() && unwanted_orphans.is_empty() {
+    if to_install_official.is_empty() && to_install_aur.is_empty() && to_remove.is_empty() {
         output::dry_run("No changes needed");
     } else {
         output::dry_run("No changes made (dry run)");
@@ -416,7 +425,7 @@ mod tests {
                 vec![s("some-orphan")],
             );
             assert!(
-                plan.unwanted_orphans.is_empty(),
+                plan.to_remove.is_empty(),
                 "declared orphan should not be removed"
             );
             return;
@@ -430,12 +439,12 @@ mod tests {
             orphans.clone(),
         );
         assert!(
-            !plan.unwanted_orphans.contains(&orphan),
+            !plan.to_remove.contains(&orphan),
             "orphan '{orphan}' is declared in config and should NOT be removed"
         );
         if orphans.len() > 1 {
             assert!(
-                !plan.unwanted_orphans.is_empty(),
+                !plan.to_remove.is_empty(),
                 "non-declared orphans should still be removed"
             );
         }
@@ -480,7 +489,26 @@ mod tests {
         }
     }
 
-    // ── Test 8: aur: prefix correctly separates AUR from official ──
+    // ── Test 8: Explicitly installed packages removed from config are detected ──
+
+    #[test]
+    fn removed_packages_detected_for_removal() {
+        let installed = sv(&["base", "git", "kilo-bin"]);
+        let desired_official = sv(&["base", "git"]);
+
+        let plan = compute_sync_plan(&desired_official, &[], &installed, vec![]);
+        assert!(
+            plan.to_remove.contains(&s("kilo-bin")),
+            "package removed from config should appear in removal list, got: {:?}",
+            plan.to_remove
+        );
+        assert!(
+            !plan.to_remove.contains(&s("base")),
+            "desired package should NOT appear in removal list"
+        );
+    }
+
+    // ── Test 9: aur: prefix correctly separates AUR from official ──
 
     #[test]
     fn aur_prefix_separation() {

@@ -46,10 +46,18 @@ pub fn run(config_path: &Path, quiet: bool) -> Result<(), DpkgError> {
         }
     }
 
-    // Orphans (installed but not in config)
+    // Installed but not in config — would be removed
+    for pkg in &installed {
+        if !all_desired.contains(pkg.as_str()) {
+            if !quiet {
+                output::removed(pkg, "// not in config, would be removed");
+            }
+            has_diff = true;
+        }
+    }
     let orphans = system::get_orphans()?;
     for pkg in &orphans {
-        if !all_desired.contains(pkg.as_str()) {
+        if !all_desired.contains(pkg.as_str()) && !installed_set.contains(pkg.as_str()) {
             if !quiet {
                 output::removed(pkg, "// not in config, would be removed");
             }

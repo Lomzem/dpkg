@@ -80,8 +80,7 @@ pub fn run(config_path: &Path, quiet: bool) -> Result<(), DpkgError> {
         output::plain(&format!("    - aur:{pkg}"));
     }
 
-    // Orphans
-    let orphans = system::get_orphans()?;
+    // Packages to remove (installed but not in config)
     let mut all_desired: HashSet<&str> = HashSet::new();
     for p in &desired_official {
         all_desired.insert(p.as_str());
@@ -89,13 +88,22 @@ pub fn run(config_path: &Path, quiet: bool) -> Result<(), DpkgError> {
     for p in &desired_aur {
         all_desired.insert(p.as_str());
     }
-    let unwanted_orphans: Vec<&String> = orphans
+    let unwanted_explicit: Vec<&String> = installed
         .iter()
         .filter(|p| !all_desired.contains(p.as_str()))
         .collect();
+    let orphans = system::get_orphans()?;
+    let unwanted_orphans: Vec<&String> = orphans
+        .iter()
+        .filter(|p| !all_desired.contains(p.as_str()) && !installed_set.contains(p.as_str()))
+        .collect();
+    let to_remove_count = unwanted_explicit.len() + unwanted_orphans.len();
 
     println!();
-    output::plain(&format!("  Orphans: {}", unwanted_orphans.len()));
+    output::plain(&format!("  Would remove: {to_remove_count}"));
+    for pkg in &unwanted_explicit {
+        output::plain(&format!("    - {pkg}"));
+    }
     for pkg in &unwanted_orphans {
         output::plain(&format!("    - {pkg}"));
     }
