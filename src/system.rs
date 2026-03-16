@@ -1,3 +1,4 @@
+use std::collections::{HashMap, HashSet};
 use std::process::Command;
 
 use crate::error::DpkgError;
@@ -229,6 +230,77 @@ pub fn install_aur(packages: &[String], verbose: bool) -> Result<(), DpkgError> 
     }
 
     Ok(())
+}
+
+/// Get all known pacman group names.
+fn get_group_names() -> Result<HashSet<String>, DpkgError> {
+    let output = Command::new(pacman_bin())
+        .args(["-Sg"])
+        .output()
+        .map_err(|e| DpkgError::InstallFailed(format!("Failed to run pacman -Sg: {e}")))?;
+
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        return Err(DpkgError::InstallFailed(format!(
+            "pacman -Sg failed: {stderr}"
+        )));
+    }
+
+    Ok(String::from_utf8_lossy(&output.stdout)
+        .lines()
+        .map(|s| s.to_string())
+        .collect())
+}
+
+/// Get member packages of a specific group.
+fn get_group_member_packages(group: &str) -> Result<Vec<String>, DpkgError> {
+    let output = Command::new(pacman_bin())
+        .args(["-Sgq", group])
+        .output()
+        .map_err(|e| DpkgError::InstallFailed(format!("Failed to run pacman -Sgq: {e}")))?;
+
+    if !output.status.success() {
+        return Ok(Vec::new());
+    }
+
+    Ok(String::from_utf8_lossy(&output.stdout)
+        .lines()
+        .map(|s| s.to_string())
+        .collect())
+}
+
+/// Build a map of group name → member packages, only for groups present in `packages`.
+pub fn get_group_members(packages: &[String]) -> Result<HashMap<String, Vec<String>>, DpkgError> {
+    let all_groups = get_group_names()?;
+    let mut result = HashMap::new();
+
+    for pkg in packages {
+        if all_groups.contains(pkg.as_str()) {
+            let members = get_group_member_packages(pkg)?;
+            if !members.is_empty() {
+                result.insert(pkg.clone(), members);
+            }
+        }
+    }
+
+    Ok(result)
+}
+
+/// Expand group names in a package list to their member packages.
+/// Non-group names pass through unchanged.
+pub fn expand_package_groups(
+    packages: &[String],
+    groups: &HashMap<String, Vec<String>>,
+) -> Vec<String> {
+    let mut result = Vec::new();
+    for pkg in packages {
+        if let Some(members) = groups.get(pkg.as_str()) {
+            result.extend(members.iter().cloned());
+        } else {
+            result.push(pkg.clone());
+        }
+    }
+    result
 }
 
 pub fn check_yay_installed() -> Result<(), DpkgError> {

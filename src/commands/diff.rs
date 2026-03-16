@@ -9,7 +9,9 @@ use crate::system;
 pub fn run(config_path: &Path, quiet: bool) -> Result<(), DpkgError> {
     let config = parse_config(config_path)?;
     let hostname = system::get_hostname()?;
-    let (desired_official, desired_aur) = collect_packages(&config, &hostname);
+    let (raw_official, desired_aur) = collect_packages(&config, &hostname);
+    let groups = system::get_group_members(&raw_official)?;
+    let desired_official = system::expand_package_groups(&raw_official, &groups);
 
     let installed = system::get_explicitly_installed()?;
     let installed_set: HashSet<&str> = installed.iter().map(|s| s.as_str()).collect();
