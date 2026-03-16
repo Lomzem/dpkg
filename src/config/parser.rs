@@ -41,9 +41,7 @@ pub fn parse_config_str(input: &str) -> Result<Config, DpkgError> {
         }
 
         // Section header
-        if line.starts_with("##") {
-            let after_hashes = &line[2..];
-
+        if let Some(after_hashes) = line.strip_prefix("##") {
             // Must have a space after ##
             if !after_hashes.starts_with(' ') {
                 return Err(DpkgError::ConfigParse {
