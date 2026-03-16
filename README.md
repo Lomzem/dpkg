@@ -56,8 +56,6 @@ Multiple sections with the same header are merged in order. Duplicate packages a
 - `//` for comments (inline or standalone)
 - Empty lines and whitespace are ignored
 
-The format is paragraph-sortable -- in Neovim, `vip :sort` sorts sections while preserving internal order.
-
 ## Usage
 
 ```bash
